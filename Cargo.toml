@@ -1,0 +1,20 @@
+[package]
+name = "tictactoe_v2"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+env_logger = "0.11.0"
+log = "0.4.20"
+ndarray = { version = "0.15.6", features = ["serde"] }
+redis = "0.24.0"
+serde = { version = "1.0.195", features = ["derive"] }
+serde_json = "1.0.111"
+tokio = { version = "1.35.1", features = ["full"] }
+uuid = { version = "1.7.0", features = ["v4"] }
+
+[dev-dependencies]
+testcontainers = "0.15.0"
+testcontainers-modules = { version = "0.3.1", features = ["redis"] }
