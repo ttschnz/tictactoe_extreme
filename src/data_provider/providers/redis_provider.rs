@@ -1,5 +1,6 @@
-use crate::{DataProvider, GameData, Move};
+use crate::{Board, DataProvider, GameData, Move};
 
+use log::debug;
 use redis::Client;
 use serde_json::{from_str, to_string};
 use uuid::Uuid;
@@ -80,7 +81,21 @@ impl DataProvider for RedisProvider {
     type Args = RedisProviderArgs;
     type ErrorKind = ErrorKind;
     fn get_game_data(&self, game_id: Uuid) -> Result<GameData, ErrorKind> {
+        debug!("Getting game data for game {}", game_id);
         let mut connection = self.get_connection()?;
+        let remote_move_count = (redis::cmd("JSON.ARRLEN")
+            .arg(game_id.to_string())
+            .arg("$.moves")
+            .query(&mut connection) as Result<Vec<usize>, _>)
+            .map_err(|e| ErrorKind::Query {
+                message: format!("{}", e),
+            })?
+            .remove(0);
+
+        if remote_move_count == 0 {
+            return Ok(GameData::new_with_id(game_id));
+        }
+
         let serialized_game: String = redis::cmd("JSON.GET")
             .arg(game_id.to_string())
             .query(&mut connection)
@@ -88,12 +103,25 @@ impl DataProvider for RedisProvider {
                 message: format!("{}", e),
             })?;
 
+        debug!("Deserializing game data: {}", serialized_game);
         let game_data: GameData =
             from_str(&serialized_game).map_err(|e| ErrorKind::Deserialize {
                 message: format!("{}", e),
             })?;
 
         Ok(game_data)
+    }
+    fn game_exists(&mut self, game_id: Uuid) -> Result<bool, Self::ErrorKind> {
+        let mut connection = self.get_connection()?;
+
+        let exists: bool = redis::cmd("EXISTS")
+            .arg(game_id.to_string())
+            .query(&mut connection)
+            .map_err(|e| ErrorKind::Query {
+                message: format!("{}", e),
+            })?;
+
+        Ok(exists)
     }
 
     fn add_move(&mut self, game_id: Uuid, new_move: Move) -> Result<(), ErrorKind> {
@@ -115,11 +143,11 @@ impl DataProvider for RedisProvider {
         Ok(())
     }
 
-    fn create_game(&mut self) -> Result<Uuid, ErrorKind> {
+    fn create_game(&mut self, uuid: Option<Uuid>) -> Result<Uuid, ErrorKind> {
         let mut connection = self.get_connection()?;
-        let uuid = Uuid::new_v4();
+        let uuid = uuid.unwrap_or(Uuid::new_v4());
 
-        let game = GameData::new();
+        let game = GameData::new_with_id(uuid);
 
         let serialized_game = to_string(&game).map_err(|e| ErrorKind::Serialize {
             message: format!("{}", e),
@@ -134,6 +162,7 @@ impl DataProvider for RedisProvider {
                 message: format!("{}", e),
             })?;
 
+        debug!("Created game {}", uuid);
         Ok(uuid)
     }
 
@@ -147,6 +176,69 @@ impl DataProvider for RedisProvider {
             _args: args.clone(),
             redis_client,
         })
+    }
+
+    fn sync_board(&mut self, game: &mut Board) -> Result<(), Self::ErrorKind> {
+        debug!("Syncing board {}", game.game_id);
+
+        // test if remote game data exists
+        if self.get_game_data(game.game_id).is_err() {
+            debug!(
+                "Remote game data for {} doesn't exist. Creating...",
+                game.game_id
+            );
+            self.create_game(Some(game.game_id))?;
+        }
+
+        let mut local_game_data: GameData = game.clone().into();
+        let mut remote_game_data = self.get_game_data(game.game_id)?;
+
+        let mut moves_to_upload = Vec::new();
+
+        if local_game_data != remote_game_data {
+            debug!(
+                "Difference between local and remote game data {} detected. Syncing...",
+                game.game_id
+            );
+            let local_moves = &mut local_game_data.moves;
+            let remote_moves = &mut remote_game_data.moves;
+            // compare each move
+            for move_index in 0..local_moves.len().max(remote_moves.len()) {
+                // does the move not exist in any of the game data?
+                if move_index >= local_moves.len() {
+                    debug!("Adding remote move {} to local game data", move_index);
+                    local_moves.push(remote_moves[move_index]);
+                    continue;
+                }
+                if move_index >= remote_moves.len() {
+                    debug!("Adding local move {} to remote game data", move_index);
+                    moves_to_upload.push(local_moves[move_index]);
+                    continue;
+                }
+
+                // the move exists in both game data. remote has priority
+                debug!(
+                    "Conflict detected at move {}. Prioritizing remote move",
+                    move_index
+                );
+                local_moves[move_index] = remote_moves[move_index].clone();
+            }
+
+            // update local game data
+            *game = local_game_data.into();
+
+            // upload moves
+            debug!(
+                "Uploading {} moves to remote game data",
+                moves_to_upload.len()
+            );
+            for new_move in moves_to_upload {
+                debug!("Uploading move {:?} to remote game data", new_move);
+                self.add_move(game.game_id, new_move)?;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -181,6 +273,7 @@ mod test {
     }
     use super::*;
     use crate::{DataProviderFactory, Player};
+
     use redis::Client;
     use redis_stack::Redis;
     use testcontainers::clients::Cli as DockerCli;
@@ -221,6 +314,9 @@ mod test {
 
     #[tokio::test]
     async fn test_data_storage() {
+        // std::env::set_var("RUST_LOG", "debug");
+        // env_logger::init();
+
         let docker_cli = DockerCli::default();
         let image = Redis;
 
@@ -239,31 +335,140 @@ mod test {
         let mut data_provider = DataProviderFactory::create::<RedisProvider>(args)
             .expect("Failed to create RedisProvider");
 
-        let uuid = data_provider.create_game().expect("Failed to create game");
+        // test insert move
+        {
+            let uuid = data_provider
+                .create_game(None)
+                .expect("Failed to create game");
 
-        let mut local_game_data = data_provider
-            .get_game_data(uuid)
-            .expect("Failed to get game data");
+            let mut local_game_data = data_provider
+                .get_game_data(uuid)
+                .expect("Failed to get game data");
 
-        let new_move_1 = Move::new((1, 1), Player::X);
+            let new_move_1 = Move::new((1, 1), Player::X);
 
-        data_provider
-            .add_move(uuid, new_move_1)
-            .expect("Failed to add move");
-        local_game_data.add_move(new_move_1);
+            data_provider
+                .add_move(uuid, new_move_1)
+                .expect("Failed to add move");
+            local_game_data.add_move(new_move_1);
 
-        let new_move_2 = Move::new((2, 2), Player::X);
+            let new_move_2 = Move::new((2, 2), Player::X);
 
-        data_provider
-            .add_move(uuid, new_move_2)
-            .expect("Failed to add move");
+            data_provider
+                .add_move(uuid, new_move_2)
+                .expect("Failed to add move");
 
-        local_game_data.add_move(new_move_2);
+            local_game_data.add_move(new_move_2);
 
-        let remote_game_data = data_provider
-            .get_game_data(uuid)
-            .expect("Failed to get game data");
+            let remote_game_data = data_provider
+                .get_game_data(uuid)
+                .expect("Failed to get game data");
 
-        assert_eq!(local_game_data, remote_game_data);
+            assert_eq!(local_game_data, remote_game_data);
+        }
+
+        debug!("starting sync tests");
+        // test sync Local -> Remote
+        {
+            let uuid = data_provider
+                .create_game(None)
+                .expect("Failed to create game");
+            let mut board = Board::from(
+                data_provider
+                    .get_game_data(uuid)
+                    .expect("Failed to get game data"),
+            );
+            board
+                .insert_move((0, 0), Player::X)
+                .expect("Failed to insert move");
+
+            data_provider
+                .sync_board(&mut board)
+                .expect("Failed to sync board");
+
+            let remote_game_data = data_provider
+                .get_game_data(uuid)
+                .expect("Failed to get game data");
+
+            assert_eq!(
+                board.moves, remote_game_data.moves,
+                "Remote game data didn't update to match local game data: {:?}",
+                remote_game_data.moves
+            );
+
+            // test sync Remote -> Local
+            let moves = remote_game_data.moves.clone();
+            let mut board = Board {
+                game_id: uuid,
+                ..Default::default()
+            };
+
+            data_provider
+                .sync_board(&mut board)
+                .expect("Failed to sync board");
+
+            let remote_game_data = data_provider.get_game_data(uuid).unwrap();
+
+            assert_eq!(
+                board.moves, moves,
+                "Local game data didn't sync correctly: {:?}",
+                board.moves
+            );
+            assert_eq!(
+                remote_game_data.moves, moves,
+                "Remote game data changed during sync: {:?}",
+                remote_game_data
+            );
+
+            // test sync Remote -> Local with conflict: Remote has priority
+            let mut board = Board {
+                game_id: uuid,
+                ..Default::default()
+            };
+
+            board
+                .insert_move((4, 4), Player::X)
+                .expect("Failed to insert move");
+
+            data_provider
+                .sync_board(&mut board)
+                .expect("Failed to sync board");
+
+            let remote_game_data = data_provider.get_game_data(uuid).unwrap();
+
+            assert_eq!(
+                board.moves, moves,
+                "Local game data didn't sync correctly during conflict sync: {:?}",
+                board.moves
+            );
+            assert_eq!(
+                remote_game_data.moves, moves,
+                "Remote game data changed during conflict sync: {:?}",
+                remote_game_data
+            );
+        }
+
+        {
+            // sync unexisting game
+
+            let mut board = Board {
+                game_id: Uuid::new_v4(),
+                ..Default::default()
+            };
+
+            data_provider
+                .sync_board(&mut board)
+                .expect("Failed to sync board");
+
+            let remote_game_data = data_provider
+                .get_game_data(board.game_id)
+                .expect("Failed to get game data");
+
+            assert_eq!(
+                board.moves, remote_game_data.moves,
+                "Remote game data didn't update to match local game data: {:?}",
+                remote_game_data.moves
+            );
+        }
     }
 }

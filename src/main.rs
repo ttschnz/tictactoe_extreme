@@ -4,7 +4,6 @@ pub mod generic;
 use data_provider::*;
 use generic::*;
 
-
 use log::info;
 
 fn main() {
@@ -13,7 +12,7 @@ fn main() {
     let mut redis_provider =
         DataProviderFactory::create::<RedisProvider>(RedisProviderArgs::from_env()).unwrap();
 
-    let uuid = redis_provider.create_game().unwrap();
+    let uuid = redis_provider.create_game(None).unwrap();
     info!("Created game with uuid: {}", uuid);
 
     let mut game_data = redis_provider.get_game_data(uuid).unwrap();

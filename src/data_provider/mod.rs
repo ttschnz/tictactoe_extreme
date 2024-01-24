@@ -4,7 +4,7 @@ mod providers;
 pub use factory::DataProviderFactory;
 pub use providers::*;
 
-use crate::{GameData, Move};
+use crate::{Board, GameData, Move};
 use core::fmt::Debug;
 use uuid::Uuid;
 
@@ -23,7 +23,20 @@ pub trait DataProvider: Sized {
     fn add_move(&mut self, game_id: Uuid, new_move: Move) -> Result<(), Self::ErrorKind>;
 
     /// creates a new game and returns the game id.
-    fn create_game(&mut self) -> Result<Uuid, Self::ErrorKind>;
+    fn create_game(&mut self, uuid: Option<Uuid>) -> Result<Uuid, Self::ErrorKind>;
 
     fn new(args: Self::Args) -> Result<Self, Self::ErrorKind>;
+
+    /// checks if a game exists for a given game id.
+    fn game_exists(&mut self, game_id: Uuid) -> Result<bool, Self::ErrorKind>;
+
+    /// syncs the board with the data provider.
+    /// This means check if there are any remote moves that are not in the board
+    /// and add them to the board, and check if there are any local moves that
+    /// are not in the data provider and add them to the data provider.
+    ///
+    /// If there are any conflicts, the remote moves should be prioritized.
+    ///
+    // TODO: How do we verify that the remote moves are valid?
+    fn sync_board(&mut self, game: &mut Board) -> Result<(), Self::ErrorKind>;
 }
