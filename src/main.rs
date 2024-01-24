@@ -4,7 +4,7 @@ pub mod generic;
 use data_provider::*;
 use generic::*;
 
-use env_logger;
+
 use log::info;
 
 fn main() {

@@ -60,17 +60,17 @@ impl RedisProviderArgs {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ErrorKind {
-    ConnectionError { message: String },
-    QueryError { message: String },
-    DeserializeError { message: String },
-    SerializeError { message: String },
+    Connection { message: String },
+    Query { message: String },
+    Deserialize { message: String },
+    Serialize { message: String },
 }
 
 impl RedisProvider {
     fn get_connection(&self) -> Result<redis::Connection, ErrorKind> {
         self.redis_client
             .get_connection()
-            .map_err(|e| ErrorKind::ConnectionError {
+            .map_err(|e| ErrorKind::Connection {
                 message: format!("{}", e),
             })
     }
@@ -84,12 +84,12 @@ impl DataProvider for RedisProvider {
         let serialized_game: String = redis::cmd("JSON.GET")
             .arg(game_id.to_string())
             .query(&mut connection)
-            .map_err(|e| ErrorKind::QueryError {
+            .map_err(|e| ErrorKind::Query {
                 message: format!("{}", e),
             })?;
 
         let game_data: GameData =
-            from_str(&serialized_game).map_err(|e| ErrorKind::DeserializeError {
+            from_str(&serialized_game).map_err(|e| ErrorKind::Deserialize {
                 message: format!("{}", e),
             })?;
 
@@ -99,7 +99,7 @@ impl DataProvider for RedisProvider {
     fn add_move(&mut self, game_id: Uuid, new_move: Move) -> Result<(), ErrorKind> {
         let mut connection = self.get_connection()?;
 
-        let stringified_move = to_string(&new_move).map_err(|e| ErrorKind::SerializeError {
+        let stringified_move = to_string(&new_move).map_err(|e| ErrorKind::Serialize {
             message: format!("{}", e),
         })?;
 
@@ -108,7 +108,7 @@ impl DataProvider for RedisProvider {
             .arg("$.moves")
             .arg(stringified_move)
             .query(&mut connection)
-            .map_err(|e| ErrorKind::QueryError {
+            .map_err(|e| ErrorKind::Query {
                 message: format!("{}", e),
             })?;
 
@@ -121,7 +121,7 @@ impl DataProvider for RedisProvider {
 
         let game = GameData::new();
 
-        let serialized_game = to_string(&game).map_err(|e| ErrorKind::SerializeError {
+        let serialized_game = to_string(&game).map_err(|e| ErrorKind::Serialize {
             message: format!("{}", e),
         })?;
 
@@ -130,7 +130,7 @@ impl DataProvider for RedisProvider {
             .arg("$")
             .arg(serialized_game)
             .query(&mut connection)
-            .map_err(|e| ErrorKind::QueryError {
+            .map_err(|e| ErrorKind::Query {
                 message: format!("{}", e),
             })?;
 
@@ -186,9 +186,9 @@ mod test {
     use testcontainers::clients::Cli as DockerCli;
 
     #[tokio::test]
-    async fn start_redis_server() -> () {
+    async fn start_redis_server() {
         let docker_cli = DockerCli::default();
-        let image = Redis::default();
+        let image = Redis;
 
         let redis_container = docker_cli.run(image);
 
@@ -222,7 +222,7 @@ mod test {
     #[tokio::test]
     async fn test_data_storage() {
         let docker_cli = DockerCli::default();
-        let image = Redis::default();
+        let image = Redis;
 
         let redis_container = docker_cli.run(image);
 

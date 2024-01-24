@@ -11,12 +11,18 @@ pub struct Board {
     pub moves: Vec<Move>,
 }
 
+impl Default for Board {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Board {
     pub const SIZE: Coordinates = (3, 3);
     pub fn new() -> Self {
         Self {
             data: Array2::from_elem(
-                (Self::SIZE.0 as usize, Self::SIZE.1 as usize),
+                (Self::SIZE.0, Self::SIZE.1),
                 SubBoard::new(),
             ),
             moves: Vec::new(),
@@ -112,13 +118,19 @@ pub struct SubBoard {
     pub state: Field,
 }
 
+impl Default for SubBoard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SubBoard {
     pub const SIZE: Coordinates = (3, 3);
 
     pub fn new() -> Self {
         Self {
             data: Array2::from_elem(
-                (Self::SIZE.0 as usize, Self::SIZE.1 as usize),
+                (Self::SIZE.0, Self::SIZE.1),
                 Field::Vacant,
             ),
             state: Field::Vacant,

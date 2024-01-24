@@ -6,6 +6,12 @@ pub struct GameData {
     pub moves: Vec<Move>,
 }
 
+impl Default for GameData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GameData {
     pub fn new() -> Self {
         Self { moves: vec![] }
