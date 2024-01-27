@@ -29,6 +29,11 @@ pub trait DataProvider: Send + Clone {
     where
         Self: Sized;
 
+    fn subscribe_to_game(
+        &mut self,
+        game_id: Uuid,
+    ) -> Result<tokio::sync::watch::Receiver<GameData>, Self::ErrorKind>;
+
     /// checks if a game exists for a given game id.
     fn game_exists(&mut self, game_id: Uuid) -> Result<bool, Self::ErrorKind>;
 

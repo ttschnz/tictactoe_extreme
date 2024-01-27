@@ -159,6 +159,22 @@ impl DataProvider for RedisProvider {
                 message: format!("{}", e),
             })?;
 
+        debug!("Added move {:?} to game {}", new_move, game_id);
+
+        debug!("Publishing game data to channel {}", game_id);
+        let game_data = self.get_game_data(game_id)?;
+        let serialized_game_data = to_string(&game_data).map_err(|e| ErrorKind::Serialize {
+            message: format!("{}", e),
+        })?;
+
+        redis::cmd("PUBLISH")
+            .arg(game_id.to_string())
+            .arg(serialized_game_data)
+            .query(&mut connection)
+            .map_err(|e| ErrorKind::Query {
+                message: format!("{}", e),
+            })?;
+
         Ok(())
     }
 
@@ -258,6 +274,32 @@ impl DataProvider for RedisProvider {
         }
 
         Ok(())
+    }
+
+    fn subscribe_to_game(
+        &mut self,
+        game_id: Uuid,
+    ) -> Result<tokio::sync::watch::Receiver<GameData>, Self::ErrorKind> {
+        // TODO: This is a very naive implementation. It should be thoroughly tested
+
+        debug!("Subscribing to game {}", game_id);
+        let mut connection = self.get_connection()?;
+        let (tx, rx) = tokio::sync::watch::channel(GameData::new_with_id(game_id));
+
+        tokio::spawn(async move {
+            let mut pubsub = connection.as_pubsub();
+            pubsub.subscribe(game_id.to_string()).unwrap();
+            loop {
+                let msg = pubsub.get_message().unwrap();
+                debug!("Received pubsub message: {:?}", msg);
+                let payload: String = msg.get_payload().unwrap();
+                let game_data: GameData = from_str(&payload).unwrap();
+                debug!("Sending new game data to subscribers: {:?}", game_data);
+                tx.send(game_data).unwrap();
+            }
+        });
+
+        Ok(rx)
     }
 }
 

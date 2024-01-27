@@ -30,6 +30,7 @@ impl ToString for CacheProviderErrorKind {
 #[derive(Clone)]
 pub struct CacheProvider {
     pub hash_map: Arc<Mutex<HashMap<Uuid, GameData>>>,
+    pub channels: Arc<Mutex<HashMap<Uuid, Vec<tokio::sync::watch::Sender<GameData>>>>>,
 }
 
 impl DataProvider for CacheProvider {
@@ -43,6 +44,21 @@ impl DataProvider for CacheProvider {
         hash_map
             .entry(game_id)
             .and_modify(|game_data| game_data.moves.push(new_move));
+
+        let new_game_data = hash_map
+            .get(&game_id)
+            .ok_or_else(|| Self::ErrorKind::KeyNotFound)?
+            .clone();
+
+        self.channels
+            .lock()
+            .map_err(|_| Self::ErrorKind::LockError)?
+            .get(&game_id)
+            .map(|channels| {
+                channels.iter().for_each(|channel| {
+                    channel.send(new_game_data.clone()).unwrap();
+                })
+            });
 
         Ok(())
     }
@@ -85,9 +101,33 @@ impl DataProvider for CacheProvider {
     {
         Ok(Self {
             hash_map: Arc::new(Mutex::new(HashMap::new())),
+            channels: Arc::new(Mutex::new(HashMap::new())),
         })
     }
     fn sync_board(&mut self, _game: &mut crate::Board) -> Result<(), Self::ErrorKind> {
         Ok(())
+    }
+
+    fn subscribe_to_game(
+        &mut self,
+        game_id: Uuid,
+    ) -> Result<tokio::sync::watch::Receiver<GameData>, Self::ErrorKind> {
+        let (tx, rx) = tokio::sync::watch::channel(self.get_game_data(game_id)?);
+        match self
+            .channels
+            .lock()
+            .map_err(|_| Self::ErrorKind::LockError)?
+            .entry(game_id)
+        {
+            Entry::Occupied(mut entry) => {
+                let channels = entry.get_mut();
+                channels.push(tx)
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(vec![tx]);
+            }
+        };
+
+        Ok(rx)
     }
 }
