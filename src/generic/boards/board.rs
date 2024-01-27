@@ -1,6 +1,7 @@
 use itertools::Itertools;
 use log::debug;
 use ndarray::Array2;
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use uuid::Uuid;
 
@@ -16,7 +17,7 @@ pub enum InvalidMove {
     NotYourTurn,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Board {
     pub data: Array2<SubBoard>,
     pub moves: Vec<Move>,

@@ -7,15 +7,18 @@ edition = "2021"
 
 [dependencies]
 env_logger = "0.11.0"
+futures-util = "0.3.30"
 itertools = "0.12.0"
 log = "0.4.20"
 ndarray = { version = "0.15.6", features = ["serde"] }
 redis = "0.24.0"
 serde = { version = "1.0.195", features = ["derive"] }
 serde_json = "1.0.111"
-tokio = { version = "1.35.1", features = ["full"] }
+tokio = { version = "1.35.1", features = ["full", "macros"] }
+tokio-tungstenite = "0.21.0"
 uuid = { version = "1.7.0", features = ["v4", "serde"] }
+
 
 [dev-dependencies]
 testcontainers = "0.15.0"
-testcontainers-modules = { version = "0.3.1", features = ["redis"] }
+# testcontainers-modules = { version = "0.3.1", features = ["redis"] }

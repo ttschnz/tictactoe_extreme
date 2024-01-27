@@ -11,9 +11,9 @@ use uuid::Uuid;
 /// DataProvider is a trait that defines the interface for a data provider.
 /// The operator of this trait doesn't care where the data is stored, it may
 /// be for example in redis, in a file or in memory.
-pub trait DataProvider: Sized {
+pub trait DataProvider: Send + Clone {
     type Args: Clone;
-    type ErrorKind: Debug + Clone + PartialEq + Eq;
+    type ErrorKind: Debug + Clone + PartialEq + Eq + ToString;
     /// returns the game data for a given game id.
     /// This means that it will have  to fetch the data from its source,
     /// serialize it if needed and return it.
@@ -25,7 +25,9 @@ pub trait DataProvider: Sized {
     /// creates a new game and returns the game id.
     fn create_game(&mut self, uuid: Option<Uuid>) -> Result<Uuid, Self::ErrorKind>;
 
-    fn new(args: Self::Args) -> Result<Self, Self::ErrorKind>;
+    fn new(args: Self::Args) -> Result<Self, Self::ErrorKind>
+    where
+        Self: Sized;
 
     /// checks if a game exists for a given game id.
     fn game_exists(&mut self, game_id: Uuid) -> Result<bool, Self::ErrorKind>;

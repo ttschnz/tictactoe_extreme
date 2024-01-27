@@ -5,6 +5,7 @@ use redis::Client;
 use serde_json::{from_str, to_string};
 use uuid::Uuid;
 
+#[derive(Clone)]
 pub struct RedisProvider {
     _args: RedisProviderArgs,
 
@@ -32,8 +33,8 @@ impl RedisProviderArgs {
 
     pub fn new() -> Self {
         Self {
-            server_hostname: RedisProviderArgs::DEFAULT_SERVER_HOSTNAME.to_string(),
-            server_port: RedisProviderArgs::DEFAULT_SERVER_PORT,
+            server_hostname: Self::DEFAULT_SERVER_HOSTNAME.to_string(),
+            server_port: Self::DEFAULT_SERVER_PORT,
             username: None,
             password: None,
         }
@@ -41,9 +42,9 @@ impl RedisProviderArgs {
 
     pub fn from_env() -> Self {
         let server_hostname = std::env::var("REDIS_SERVER_HOSTNAME")
-            .unwrap_or(RedisProviderArgs::DEFAULT_SERVER_HOSTNAME.to_string());
+            .unwrap_or(Self::DEFAULT_SERVER_HOSTNAME.to_string());
         let server_port = std::env::var("REDIS_SERVER_PORT")
-            .unwrap_or(RedisProviderArgs::DEFAULT_SERVER_PORT.to_string())
+            .unwrap_or(Self::DEFAULT_SERVER_PORT.to_string())
             .parse::<u16>()
             .expect("Failed to parse REDIS_SERVER_PORT");
 
@@ -65,6 +66,24 @@ pub enum ErrorKind {
     Query { message: String },
     Deserialize { message: String },
     Serialize { message: String },
+}
+
+impl ToString for ErrorKind {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Connection { message } => format!(
+                "the connection to redis could not be established: {}",
+                message
+            ),
+            Self::Deserialize { message } => {
+                format!("the string from redis could not be serialized: {}", message)
+            }
+            Self::Query { message } => format!("there was an error querying redis: {}", message),
+            Self::Serialize { message } => {
+                format!("the local object could not be serialized: {}", message)
+            }
+        }
+    }
 }
 
 impl RedisProvider {

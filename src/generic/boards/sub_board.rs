@@ -1,8 +1,9 @@
 use ndarray::Array2;
+use serde::{Deserialize, Serialize};
 
 use crate::{generic::boards::check_matrix, Coordinates, Field, GameState, Player};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct SubBoard {
     pub data: Array2<Field>,
     pub state: Field,
