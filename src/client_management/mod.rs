@@ -1,4 +1,5 @@
 pub use std::{fmt::Debug, future::Future};
+pub mod rest_api;
 pub mod websocket;
 
 pub trait ServerArgs: Sized {

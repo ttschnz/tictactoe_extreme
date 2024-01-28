@@ -1,11 +1,11 @@
-use crate::{Board, DataProvider, Player};
+use crate::{Board, DataProvider};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::WatchStream;
 use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 use uuid::Uuid;
 
-use log::{debug, error};
+use log::debug;
 use std::{
     ops::Deref,
     sync::{Arc, Mutex},
@@ -38,6 +38,8 @@ pub enum Error {
     HandShakeError(String),
     CouldNotSerialize(String),
     ErrorMakingMove(String),
+    ErrorSubscribing(String),
+    CouldNotSend(String),
 }
 
 pub struct StreamHandler<T: DataProvider> {
@@ -48,37 +50,29 @@ pub struct StreamHandler<T: DataProvider> {
 
 impl<T: DataProvider> StreamHandler<T> {
     pub async fn handle_stream(stream: TcpStream, mut data_provider: T) -> Result<(), Error> {
-        let client = Self::accept_connection(stream, data_provider.clone()).await;
-        match client {
-            Err(e) => {
-                error!("Error accepting connection: {:?}", e);
-                Err(e)
-            }
-            Ok(client) => {
-                debug!("Client accepted");
+        let client = Self::accept_connection(stream, data_provider.clone()).await?;
+        debug!("Client accepted");
 
-                let mut rx = WatchStream::new(
-                    data_provider
-                        .subscribe_to_game(client.connected_game)
-                        .unwrap(),
-                );
+        let mut rx = WatchStream::new(
+            data_provider
+                .subscribe_to_game(client.connected_game)
+                .map_err(|e| Error::ErrorSubscribing(e.to_string()))?,
+        );
 
-                let (mut ws_sender, _) = client.stream.split();
+        let (mut ws_sender, _) = client.stream.split();
 
-                while let Some(game_data_update) = rx.next().await {
-                    ws_sender
-                        .send(Message::Text(
-                            serde_json::to_string(&OutgoingMessage::GameState {
-                                game_state: Board::from(game_data_update),
-                            })
-                            .unwrap(),
-                        ))
-                        .await
-                        .unwrap();
-                }
-                Ok(())
-            }
+        while let Some(game_data_update) = rx.next().await {
+            ws_sender
+                .send(Message::Text(
+                    serde_json::to_string(&OutgoingMessage::GameState {
+                        game_state: Board::from(game_data_update),
+                    })
+                    .map_err(|e| Error::CouldNotSerialize(e.to_string()))?,
+                ))
+                .await
+                .map_err(|e| Error::CouldNotSend(e.to_string()))?;
         }
+        Ok(())
     }
 
     async fn accept_connection(stream: TcpStream, data_provider: T) -> Result<Self, Error> {

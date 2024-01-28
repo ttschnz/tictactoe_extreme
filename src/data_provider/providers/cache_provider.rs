@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{DataProvider, GameData};
@@ -10,7 +11,7 @@ use crate::{DataProvider, GameData};
 #[derive(Clone)]
 pub struct CacheProviderArgs {}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum CacheProviderErrorKind {
     LockError,
     KeyNotFound,
@@ -106,6 +107,13 @@ impl DataProvider for CacheProvider {
     }
     fn sync_board(&mut self, _game: &mut crate::Board) -> Result<(), Self::ErrorKind> {
         Ok(())
+    }
+    fn get_games(&self) -> Result<Vec<Uuid>, Self::ErrorKind> {
+        let hash_map = self
+            .hash_map
+            .lock()
+            .map_err(|_| Self::ErrorKind::LockError)?;
+        Ok(hash_map.keys().cloned().collect())
     }
 
     fn subscribe_to_game(

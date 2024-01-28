@@ -3,6 +3,7 @@ mod providers;
 
 pub use factory::DataProviderFactory;
 pub use providers::*;
+use serde::{Deserialize, Serialize};
 
 use crate::{Board, GameData, Move};
 use core::fmt::Debug;
@@ -13,7 +14,10 @@ use uuid::Uuid;
 /// be for example in redis, in a file or in memory.
 pub trait DataProvider: Send + Clone {
     type Args: Clone;
-    type ErrorKind: Debug + Clone + PartialEq + Eq + ToString;
+    type ErrorKind: Debug + Clone + PartialEq + Eq + ToString + Deserialize<'static> + Serialize;
+
+    fn get_games(&self) -> Result<Vec<Uuid>, Self::ErrorKind>;
+
     /// returns the game data for a given game id.
     /// This means that it will have  to fetch the data from its source,
     /// serialize it if needed and return it.

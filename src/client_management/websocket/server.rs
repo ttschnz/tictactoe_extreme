@@ -72,7 +72,12 @@ impl<T: DataProvider + 'static> Server<T> for WebSocketServer<T> {
                     Ok((stream, _)) => {
                         debug!("new connection");
                         let data_provider = data_provider.clone();
-                        spawn(StreamHandler::handle_stream(stream, data_provider));
+                        spawn(async {
+                            match StreamHandler::handle_stream(stream, data_provider).await {
+                                Err(e) => error!("Error handling stream: {:?}", e),
+                                _ => {}
+                            }
+                        });
                     }
                 }
             }

@@ -2,6 +2,7 @@ use crate::{Board, DataProvider, GameData, Move};
 
 use log::debug;
 use redis::Client;
+use serde::{Deserialize, Serialize};
 use serde_json::{from_str, to_string};
 use uuid::Uuid;
 
@@ -60,7 +61,7 @@ impl RedisProviderArgs {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum ErrorKind {
     Connection { message: String },
     Query { message: String },
@@ -130,6 +131,25 @@ impl DataProvider for RedisProvider {
 
         Ok(game_data)
     }
+
+    fn get_games(&self) -> Result<Vec<Uuid>, Self::ErrorKind> {
+        let mut connection = self.get_connection()?;
+        let game_ids: Vec<String> =
+            redis::cmd("KEYS")
+                .arg("*")
+                .query(&mut connection)
+                .map_err(|e| ErrorKind::Query {
+                    message: format!("{}", e),
+                })?;
+
+        let game_ids: Vec<Uuid> = game_ids
+            .into_iter()
+            .filter_map(|x| Uuid::parse_str(&x).ok())
+            .collect();
+
+        Ok(game_ids)
+    }
+
     fn game_exists(&mut self, game_id: Uuid) -> Result<bool, Self::ErrorKind> {
         let mut connection = self.get_connection()?;
 
