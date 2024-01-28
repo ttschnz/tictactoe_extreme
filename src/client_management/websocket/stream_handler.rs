@@ -35,10 +35,10 @@ pub enum Error {
     InvalidUuid(String),
     GameNotFound,
     InvalidRole(String),
-    HandShakeError(String),
+    HandShake(String),
     CouldNotSerialize(String),
-    ErrorMakingMove(String),
-    ErrorSubscribing(String),
+    MakingMove(String),
+    Subscribing(String),
     CouldNotSend(String),
 }
 
@@ -56,7 +56,7 @@ impl<T: DataProvider> StreamHandler<T> {
         let mut rx = WatchStream::new(
             data_provider
                 .subscribe_to_game(client.connected_game)
-                .map_err(|e| Error::ErrorSubscribing(e.to_string()))?,
+                .map_err(|e| Error::Subscribing(e.to_string()))?,
         );
 
         let (mut ws_sender, _) = client.stream.split();
@@ -83,7 +83,7 @@ impl<T: DataProvider> StreamHandler<T> {
             Ok(response)
         })
         .await
-        .map_err(|ws_err| Error::HandShakeError(ws_err.to_string()))?;
+        .map_err(|ws_err| Error::HandShake(ws_err.to_string()))?;
 
         let path = request_path.lock().unwrap().deref().clone();
         debug!("request path: {:?}", path);

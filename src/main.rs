@@ -2,7 +2,6 @@ pub mod data_provider;
 pub mod generic;
 
 use data_provider::*;
-use env_logger;
 use generic::*;
 use log::info;
 

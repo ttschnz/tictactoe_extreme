@@ -6,12 +6,12 @@ use actix_web::{
 };
 use serde::Deserialize;
 use serde_json::to_string;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 pub async fn get_games<T: DataProvider>(
     _request: HttpRequest,
-    games: Data<Mutex<T>>,
+    games: Data<Arc<Mutex<T>>>,
 ) -> impl Responder {
     let games = games.lock().unwrap();
     let games = games.get_games().unwrap();
@@ -26,7 +26,7 @@ pub struct GameSelector {
 pub async fn get_game<T: DataProvider>(
     path: Path<GameSelector>,
     _request: HttpRequest,
-    games: Data<Mutex<T>>,
+    games: Data<Arc<Mutex<T>>>,
 ) -> impl Responder {
     let games = games.lock().unwrap();
     match games.get_game_data(path.game_id) {
@@ -37,7 +37,7 @@ pub async fn get_game<T: DataProvider>(
 
 pub async fn create_game<T: DataProvider>(
     _request: HttpRequest,
-    games: Data<Mutex<T>>,
+    games: Data<Arc<Mutex<T>>>,
 ) -> impl Responder {
     let mut games = games.lock().unwrap();
     match games.create_game(None) {
@@ -49,7 +49,7 @@ pub async fn create_game<T: DataProvider>(
 pub async fn add_move<T: DataProvider>(
     _request: HttpRequest,
     path: Path<GameSelector>,
-    games: Data<Mutex<T>>,
+    games: Data<Arc<Mutex<T>>>,
     body: Json<Move>,
 ) -> impl Responder {
     let mut games = games.lock().unwrap();

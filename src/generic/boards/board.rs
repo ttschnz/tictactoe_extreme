@@ -42,11 +42,11 @@ impl From<GameData> for Board {
     }
 }
 
-impl Into<GameData> for Board {
-    fn into(self) -> GameData {
-        GameData {
-            moves: self.moves,
-            game_id: self.game_id,
+impl From<Board> for GameData {
+    fn from(val: Board) -> Self {
+        Self {
+            moves: val.moves,
+            game_id: val.game_id,
         }
     }
 }

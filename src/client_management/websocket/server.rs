@@ -1,6 +1,6 @@
 use crate::{websocket::StreamHandler, DataProvider, Server, ServerArgs};
 use log::{debug, error};
-use std::{future::Future, marker::PhantomData};
+use std::marker::PhantomData;
 use tokio::{net::TcpListener, spawn};
 
 #[derive(Debug)]
@@ -53,32 +53,26 @@ impl<T: DataProvider + 'static> Server<T> for WebSocketServer<T> {
             phantom: PhantomData,
         })
     }
-    fn start(
-        &mut self,
-        data_provider: T,
-    ) -> impl Future<Output = Result<(), Self::ErrorKind>> + Send {
-        async move {
-            let addr = format!("{}:{}", self.config.listen_addr, self.config.listen_port);
-            debug!("Listening on {}", addr);
-            let server = TcpListener::bind(addr)
-                .await
-                .map_err(|e| ErrorKind::ErrorListening(e))?;
-            debug!("server started");
-            loop {
-                match server.accept().await {
-                    Err(e) => {
-                        error!("Error accepting connection: {:?}", e);
-                    }
-                    Ok((stream, _)) => {
-                        debug!("new connection");
-                        let data_provider = data_provider.clone();
-                        spawn(async {
-                            match StreamHandler::handle_stream(stream, data_provider).await {
-                                Err(e) => error!("Error handling stream: {:?}", e),
-                                _ => {}
-                            }
-                        });
-                    }
+    async fn start(&mut self, data_provider: T) -> Result<(), Self::ErrorKind> {
+        let addr = format!("{}:{}", self.config.listen_addr, self.config.listen_port);
+        debug!("Listening on {}", addr);
+        let server = TcpListener::bind(addr)
+            .await
+            .map_err(ErrorKind::ErrorListening)?;
+        debug!("server started");
+        loop {
+            match server.accept().await {
+                Err(e) => {
+                    error!("Error accepting connection: {:?}", e);
+                }
+                Ok((stream, _)) => {
+                    debug!("new connection");
+                    let data_provider = data_provider.clone();
+                    spawn(async {
+                        if let Err(e) = StreamHandler::handle_stream(stream, data_provider).await {
+                            error!("Error handling stream: {:?}", e)
+                        }
+                    });
                 }
             }
         }
@@ -87,7 +81,10 @@ impl<T: DataProvider + 'static> Server<T> for WebSocketServer<T> {
 
 #[cfg(test)]
 mod test {
-    use crate::{websocket::stream_handler::IncommingMessage, CacheProvider, CacheProviderArgs};
+    use crate::{
+        websocket::stream_handler::{IncommingMessage, OutgoingMessage},
+        CacheProvider, CacheProviderArgs,
+    };
 
     use super::*;
     use futures_util::{SinkExt, StreamExt};
@@ -122,13 +119,17 @@ mod test {
 
     #[tokio::test]
     async fn test_server() {
-        env_logger::builder()
-            .is_test(true)
-            .try_init()
-            .expect("Failed to init logger");
+        // env_logger::builder()
+        //     .is_test(true)
+        //     .try_init()
+        //     .expect("Failed to init logger");
+        let game_id = Uuid::new_v4();
+
         let config = WebSocketConfiguration::from_env();
         let moving_config = config.clone();
-        let data_provider = CacheProvider::new(CacheProviderArgs {}).unwrap();
+        let mut data_provider = CacheProvider::new(CacheProviderArgs {}).unwrap();
+
+        data_provider.create_game(Some(game_id)).unwrap();
 
         tokio::spawn(async move {
             let mut server = WebSocketServer::new(moving_config).unwrap();
@@ -141,9 +142,7 @@ mod test {
         // connect to server
         match connect_async(format!(
             "ws://{}:{}/{}",
-            config.listen_addr,
-            config.listen_port,
-            Uuid::new_v4()
+            config.listen_addr, config.listen_port, game_id
         ))
         .await
         {
@@ -153,12 +152,14 @@ mod test {
             Ok((ws_stream, _)) => {
                 let (mut write, mut read) = ws_stream.split();
                 write
-                    .send(Message::Text("Hello".to_string()))
+                    .send(Message::Text(
+                        serde_json::to_string(&IncommingMessage::Ping {}).unwrap(),
+                    ))
                     .await
                     .unwrap();
 
-                let msg = read.next().await.unwrap();
-                assert_eq!(msg.unwrap(), Message::Text("Hello".to_string()));
+                let msg = read.next().await.unwrap().unwrap();
+                serde_json::from_str::<OutgoingMessage>(&msg.to_string()).unwrap();
             }
         }
     }

@@ -34,6 +34,12 @@ pub struct CacheProvider {
     pub channels: Arc<Mutex<HashMap<Uuid, Vec<tokio::sync::watch::Sender<GameData>>>>>,
 }
 
+impl Default for CacheProvider {
+    fn default() -> Self {
+        Self::new(CacheProviderArgs {}).unwrap()
+    }
+}
+
 impl DataProvider for CacheProvider {
     type Args = CacheProviderArgs;
     type ErrorKind = CacheProviderErrorKind;
@@ -48,18 +54,19 @@ impl DataProvider for CacheProvider {
 
         let new_game_data = hash_map
             .get(&game_id)
-            .ok_or_else(|| Self::ErrorKind::KeyNotFound)?
+            .ok_or(Self::ErrorKind::KeyNotFound)?
             .clone();
 
-        self.channels
+        if let Some(channels) = self
+            .channels
             .lock()
             .map_err(|_| Self::ErrorKind::LockError)?
             .get(&game_id)
-            .map(|channels| {
-                channels.iter().for_each(|channel| {
-                    channel.send(new_game_data.clone()).unwrap();
-                })
-            });
+        {
+            channels.iter().for_each(|channel| {
+                channel.send(new_game_data.clone()).unwrap();
+            })
+        };
 
         Ok(())
     }

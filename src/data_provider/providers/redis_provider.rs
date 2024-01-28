@@ -276,7 +276,7 @@ impl DataProvider for RedisProvider {
                     "Conflict detected at move {}. Prioritizing remote move",
                     move_index
                 );
-                local_moves[move_index] = remote_moves[move_index].clone();
+                local_moves[move_index] = remote_moves[move_index];
             }
 
             // update local game data
