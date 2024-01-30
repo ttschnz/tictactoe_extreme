@@ -5,7 +5,7 @@
 # https://docs.docker.com/go/dockerfile-reference/
 
 ARG RUST_VERSION=1.75.0
-ARG APP_NAME=tictactoe_v2
+ARG APP_NAME=tictactoe_extreme
 
 ################################################################################
 # xx is a helper for cross-compilation.

@@ -1,6 +1,8 @@
 {
   "recommendations": [
     "github.vscode-github-actions",
+    "ms-azuretools.vscode-docker",
+    "tamasfe.even-better-toml",
     "rust-lang.rust-analyzer"
   ]
 }

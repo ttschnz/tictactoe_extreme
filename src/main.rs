@@ -1,29 +1,76 @@
-pub mod data_provider;
-pub mod generic;
+// mod client_management;
+// mod data_provider;
+// mod generic;
 
-use data_provider::*;
-use generic::*;
 use log::info;
+use tokio::{signal::ctrl_c, spawn};
 
-fn main() {
-    env_logger::init();
+use tictactoe_extreme::{
+    r#static::StaticServer, rest_api::ApiServer, websocket::WebSocketServer, CacheProvider,
+    DataProvider, RedisProvider, RedisProviderArgs, Server,
+};
 
-    let mut redis_provider =
-        DataProviderFactory::create::<RedisProvider>(RedisProviderArgs::from_env()).unwrap();
+#[tokio::main]
+async fn main() {
+    env_logger::builder()
+        .is_test(true)
+        .try_init()
+        .expect("Failed to init logger");
+    // read command line arguments
+    let args: Vec<String> = std::env::args().collect();
 
-    let uuid = redis_provider.create_game(None).unwrap();
-    info!("Created game with uuid: {}", uuid);
+    match args.get(1) {
+        None => {
+            let data_provider = CacheProvider::default();
 
-    let mut game_data = redis_provider.get_game_data(uuid).unwrap();
-    info!("Game data: {:?}", game_data);
+            let mut static_server = StaticServer::with_data_provider(data_provider.clone());
+            let mut api_server = ApiServer::with_data_provider(data_provider.clone());
+            let mut websocket_server = WebSocketServer::with_data_provider(data_provider.clone());
+            spawn(async move {
+                static_server.start().await.unwrap();
+            });
+            spawn(async move {
+                api_server.start().await.unwrap();
+            });
+            spawn(async move {
+                websocket_server.start().await.unwrap();
+            });
+        }
+        Some(server) => {
+            let data_provider = RedisProvider::new(RedisProviderArgs::from_env()).unwrap();
+            match server.as_str() {
+                "webserver" => {
+                    // start webserver
+                    info!("Starting webserver");
+                    let mut static_server = StaticServer::with_data_provider(data_provider.clone());
+                    spawn(async move {
+                        static_server.start().await.unwrap();
+                    });
+                }
+                "api" => {
+                    // start api server
+                    info!("Starting api server");
+                    let mut api_server = ApiServer::with_data_provider(data_provider.clone());
+                    spawn(async move {
+                        api_server.start().await.unwrap();
+                    });
+                }
+                "websocket" => {
+                    // start websocket server
+                    info!("Starting websocket server");
+                    let mut websocket_server =
+                        WebSocketServer::with_data_provider(data_provider.clone());
+                    spawn(async move {
+                        websocket_server.start().await.unwrap();
+                    });
+                }
+                _ => {
+                    panic!("Unknown server: {}", server);
+                }
+            }
+        }
+    }
 
-    let new_move = Move::new((1, 2), Player::X);
-    game_data.add_move(new_move);
-    info!("Game data: {:?}", game_data);
-
-    redis_provider
-        .add_move(uuid, new_move)
-        .expect("Failed to add move");
-
-    info!("Remote game data: {:?}", game_data);
+    // wait for ctrl-c
+    ctrl_c().await.unwrap();
 }

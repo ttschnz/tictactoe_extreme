@@ -1,4 +1,4 @@
-use crate::DataProvider;
+use crate::{DataProvider, Server};
 use actix_web::{
     web::{get, post, put, Data},
     App, HttpServer,
@@ -40,18 +40,10 @@ pub struct ApiServer<T: DataProvider> {
     pub data_provider: T,
 }
 
-impl<T: DataProvider + Default> Default for ApiServer<T> {
-    fn default() -> Self {
-        Self {
-            port: 8080,
-            host: "127.0.0.1".to_string(),
-            data_provider: T::default(),
-        }
-    }
-}
+impl<T: DataProvider + Default + 'static> Server<T> for ApiServer<T> {
+    type ErrorKind = std::io::Error;
 
-impl<T: DataProvider + 'static> ApiServer<T> {
-    pub fn new(port: u16, host: String, data_provider: T) -> Self {
+    fn new(host: String, port: u16, data_provider: T) -> Self {
         Self {
             port,
             host,
@@ -59,11 +51,31 @@ impl<T: DataProvider + 'static> ApiServer<T> {
         }
     }
 
+    fn default() -> Self {
+        Self {
+            port: Self::DEFAULT_PORT,
+            host: Self::DEFAULT_HOST.to_string(),
+            data_provider: T::default(),
+        }
+    }
+
     fn get_address(&self) -> String {
         format!("{}:{}", self.host, self.port)
     }
-
-    pub async fn start(&self) -> Result<(), std::io::Error> {
+    fn from_env(data_provider: T) -> Self {
+        let port = std::env::var("API_PORT").unwrap_or_else(|_| Self::DEFAULT_PORT.to_string());
+        let host = std::env::var("API_HOST").unwrap_or_else(|_| Self::DEFAULT_HOST.to_string());
+        let port = port.parse::<u16>().unwrap_or(Self::DEFAULT_PORT);
+        Self::new(host, port, data_provider)
+    }
+    fn with_data_provider(data_provider: T) -> Self {
+        Self {
+            port: Self::DEFAULT_PORT,
+            host: Self::DEFAULT_HOST.to_string(),
+            data_provider,
+        }
+    }
+    async fn start(&mut self) -> Result<(), std::io::Error> {
         let api = Arc::new(Mutex::new(self.data_provider.clone()));
         HttpServer::new(move || {
             let api = api.clone();
@@ -88,6 +100,8 @@ mod test {
     use crate::{CacheProvider, CacheProviderArgs, GameData, Move, Player};
     use reqwest::{Client, StatusCode};
     use serial_test::serial;
+    use std::time::Duration;
+    use tokio::{spawn, time::sleep};
     use uuid::Uuid;
 
     fn get_cache_api(existing_provider: Option<CacheProvider>) -> ApiServer<CacheProvider> {
@@ -95,7 +109,7 @@ mod test {
         ApiServer {
             port: random_port,
             data_provider: existing_provider.unwrap_or(CacheProvider::default()),
-            ..Default::default()
+            host: ApiServer::<CacheProvider>::DEFAULT_HOST.to_string(),
         }
     }
 
@@ -107,7 +121,8 @@ mod test {
         //     .is_test(true)
         //     .try_init()
         //     .expect("Failed to init logger");
-        let api = get_cache_api(None);
+        let mut api = get_cache_api(None);
+        println!("api address: {}", api.get_address());
         api.start().await.unwrap();
     }
 
@@ -132,9 +147,10 @@ mod test {
             data_provider.create_game(Some(*uuid)).unwrap();
         }
 
-        let api = get_cache_api(Some(data_provider));
+        let mut api = get_cache_api(Some(data_provider));
         let addr = api.get_address();
-        tokio::spawn(async move { api.start().await.unwrap() });
+        spawn(async move { api.start().await.unwrap() });
+        sleep(Duration::from_millis(100)).await;
 
         let client = Client::new();
         let response = client
@@ -175,9 +191,10 @@ mod test {
 
         let data = data_provider.get_game_data(game_uuid).unwrap();
 
-        let api = get_cache_api(Some(data_provider));
+        let mut api = get_cache_api(Some(data_provider));
         let addr = api.get_address();
-        tokio::spawn(async move { api.start().await.unwrap() });
+        spawn(async move { api.start().await.unwrap() });
+        sleep(Duration::from_millis(100)).await;
 
         let client = Client::new();
         let response = client
@@ -211,9 +228,10 @@ mod test {
 
         let new_move = Move::new((0, 0), Player::X);
 
-        let api = get_cache_api(Some(data_provider));
+        let mut api = get_cache_api(Some(data_provider));
         let addr = api.get_address();
-        tokio::spawn(async move { api.start().await.unwrap() });
+        spawn(async move { api.start().await.unwrap() });
+        sleep(Duration::from_millis(100)).await;
 
         let client = Client::new();
         let response = client

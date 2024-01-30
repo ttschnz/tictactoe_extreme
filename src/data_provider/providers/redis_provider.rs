@@ -61,6 +61,12 @@ impl RedisProviderArgs {
     }
 }
 
+impl Default for RedisProvider {
+    fn default() -> Self {
+        Self::new(RedisProviderArgs::default()).unwrap()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum ErrorKind {
     Connection { message: String },
