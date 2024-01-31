@@ -1,6 +1,7 @@
 use crate::{DataProvider, Server};
 use actix_files::Files;
 use actix_web::{App, HttpServer};
+use log::debug;
 use std::marker::PhantomData;
 
 pub struct StaticServer<T> {
@@ -36,14 +37,16 @@ impl<T: DataProvider + Default> Server<T> for StaticServer<T> {
     }
 
     fn from_env(_data_provider: T) -> Self {
+        debug!("env: {:?}", std::env::vars());
         let port =
             std::env::var("WEBSERVER_PORT").unwrap_or_else(|_| Self::DEFAULT_PORT.to_string());
         let host =
-            std::env::var("WEBSERVER_ADDR").unwrap_or_else(|_| Self::DEFAULT_HOST.to_string());
+            std::env::var("WEBSERVER_HOST").unwrap_or_else(|_| Self::DEFAULT_HOST.to_string());
         let port = port.parse::<u16>().unwrap_or(Self::DEFAULT_PORT);
         Self::new(host, port, T::default())
     }
     async fn start(&mut self) -> Result<(), Self::ErrorKind> {
+        debug!("Starting static server on {}", self.get_address());
         HttpServer::new(|| App::new().service(Files::new("/", "./static").index_file("index.html")))
             .bind(self.get_address())
             .unwrap()

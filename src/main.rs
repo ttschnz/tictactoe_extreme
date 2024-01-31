@@ -23,9 +23,27 @@ async fn main() {
         None => {
             let data_provider = CacheProvider::default();
 
-            let mut static_server = StaticServer::with_data_provider(data_provider.clone());
-            let mut api_server = ApiServer::with_data_provider(data_provider.clone());
-            let mut websocket_server = WebSocketServer::with_data_provider(data_provider.clone());
+            // all ports must be different from each other, if one is not set, none of the others can be 3000
+            let ports = vec![
+                std::env::var("WEBSERVER_PORT"),
+                std::env::var("API_PORT"),
+                std::env::var("WEBSOCKET_PORT"),
+            ]
+            .iter()
+            .map(|val| val.clone().unwrap_or("3000".to_string()))
+            .collect::<Vec<_>>();
+
+            let unique_ports = ports.iter().collect::<std::collections::HashSet<_>>();
+            if unique_ports.len() != ports.len() {
+                panic!(
+                    "All ports must be different from each other. Got: {:?}",
+                    ports
+                );
+            }
+
+            let mut static_server = StaticServer::from_env(data_provider.clone());
+            let mut api_server = ApiServer::from_env(data_provider.clone());
+            let mut websocket_server = WebSocketServer::from_env(data_provider.clone());
             spawn(async move {
                 static_server.start().await.unwrap();
             });
@@ -42,7 +60,7 @@ async fn main() {
                 "webserver" => {
                     // start webserver
                     info!("Starting webserver");
-                    let mut static_server = StaticServer::with_data_provider(data_provider.clone());
+                    let mut static_server = StaticServer::from_env(data_provider.clone());
                     spawn(async move {
                         static_server.start().await.unwrap();
                     });
@@ -50,7 +68,7 @@ async fn main() {
                 "api" => {
                     // start api server
                     info!("Starting api server");
-                    let mut api_server = ApiServer::with_data_provider(data_provider.clone());
+                    let mut api_server = ApiServer::from_env(data_provider.clone());
                     spawn(async move {
                         api_server.start().await.unwrap();
                     });
@@ -58,8 +76,7 @@ async fn main() {
                 "websocket" => {
                     // start websocket server
                     info!("Starting websocket server");
-                    let mut websocket_server =
-                        WebSocketServer::with_data_provider(data_provider.clone());
+                    let mut websocket_server = WebSocketServer::from_env(data_provider.clone());
                     spawn(async move {
                         websocket_server.start().await.unwrap();
                     });

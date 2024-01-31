@@ -59,19 +59,32 @@ impl<T: DataProvider> StreamHandler<T> {
                 .map_err(|e| Error::Subscribing(e.to_string()))?,
         );
 
+        debug!("sucessfully subscribed to game {}", client.connected_game);
+
         let (mut ws_sender, _) = client.stream.split();
 
-        while let Some(game_data_update) = rx.next().await {
-            ws_sender
-                .send(Message::Text(
-                    serde_json::to_string(&OutgoingMessage::GameState {
-                        game_state: Board::from(game_data_update),
-                    })
-                    .map_err(|e| Error::CouldNotSerialize(e.to_string()))?,
-                ))
-                .await
-                .map_err(|e| Error::CouldNotSend(e.to_string()))?;
+        loop {
+            match rx.next().await {
+                Some(game_data_update) => {
+                    debug!("Received data from DataProvider: Sending game update to client");
+                    ws_sender
+                        .send(Message::Text(
+                            serde_json::to_string(&OutgoingMessage::GameState {
+                                game_state: Board::from(game_data_update),
+                            })
+                            .map_err(|e| Error::CouldNotSerialize(e.to_string()))?,
+                        ))
+                        .await
+                        .map_err(|e| Error::CouldNotSend(e.to_string()))?;
+                    debug!("Data sent, waiting for next message");
+                }
+                None => {
+                    debug!("Received None via rx. Exiting...");
+                    break;
+                }
+            }
         }
+        debug!("stream ended. Returning");
         Ok(())
     }
 
