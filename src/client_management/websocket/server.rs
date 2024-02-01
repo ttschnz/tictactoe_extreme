@@ -122,16 +122,15 @@ mod test {
         websocket::stream_handler::{IncommingMessage, OutgoingMessage},
         CacheProvider, Move, Player, RedisProvider, RedisProviderArgs,
     };
-    use futures_util::{SinkExt, StreamExt};
+    use futures_util::StreamExt;
 
     use redis_stack::Redis;
     use std::time::Duration;
     use testcontainers::clients::Cli as DockerCli;
     use tokio::time::sleep;
     use tokio::time::timeout;
-    use tokio_tungstenite::{connect_async, tungstenite::Message};
+    use tokio_tungstenite::connect_async;
     use uuid::Uuid;
-    // use tokio_tungstenite::tungstenite::client;
 
     #[tokio::test]
     #[ignore = "this is a manual test"]

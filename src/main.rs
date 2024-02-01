@@ -24,7 +24,7 @@ async fn main() {
             let data_provider = CacheProvider::default();
 
             // all ports must be different from each other, if one is not set, none of the others can be 3000
-            let ports = vec![
+            let ports = [
                 std::env::var("WEBSERVER_PORT"),
                 std::env::var("API_PORT"),
                 std::env::var("WEBSOCKET_PORT"),
