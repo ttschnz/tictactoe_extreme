@@ -6,27 +6,43 @@ Tictactoe Extreme is a rust-written fullstack application which can be used to p
 
 Currently it is not possible to install or start Tictactoe Extreme via any package manager.
 You can however `clone` it and then run it.
-All you need to have is docker installed.
 
 ```bash
 git clone https://github.com/ttschnz/tictactoe_extreme
+```
+You can then run it directly, or via docker
+### Direct run
+Required for cargo to be installed. See [rustup](https://rustup.rs/).
+
+This method is more for debugging than anything else. The three services (websocket, api, static server) are started on their own ports and hosts, given by the environment variables:
+- `WEBSERVER_PORT` and `WEBSERVER_HOST`
+- `WEBSOCKET_PORT` and `WEBSOCKET_HOST`
+- `API_PORT` and `API_HOST`
+On linux you can do it with the following command:
+```bash
+export WEBSERVER_PORT=3000
+export WEBSOCKET_PORT=4000
+export API_PORT=5000
+export WEBSERVER_HOST=[::]
+export WEBSOCKET_HOST=[::]
+export API_HOST=[::]
+```
+
+then build and run the service you'd like:
+```bash
+cargo run --release -- [api|webserver|websocket|'']
+```
+
+then build the 
+### Docker
+```bash
 docker compose up -d && docker compose logs -f 
 ```
 
 ## Usage
 
-```python
-import foobar
-
-# returns 'words'
-foobar.pluralize('word')
-
-# returns 'geese'
-foobar.pluralize('goose')
-
-# returns 'phenomenon'
-foobar.singularize('phenomena')
-```
+this crate gives you access to a library, you can use it according to:
+<!-- //TODO! -->
 
 ## Contributing
 
