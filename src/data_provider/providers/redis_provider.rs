@@ -2,8 +2,10 @@ use crate::{Board, DataProvider, GameData, Move};
 
 use log::debug;
 use redis::Client;
+use redis_async::{client::pubsub::pubsub_connect, resp::FromResp};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_str, to_string};
+use tokio_stream::StreamExt;
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -309,20 +311,39 @@ impl DataProvider for RedisProvider {
         // TODO: This is a very naive implementation. It should be thoroughly tested
 
         debug!("Subscribing to game {}", game_id);
-        let mut connection = self.get_connection()?;
+        // let mut connection = self.get_connection()?;
         let (tx, rx) = tokio::sync::watch::channel(GameData::new_with_id(game_id));
-
+        let args = self._args.clone();
         tokio::spawn(async move {
-            let mut pubsub = connection.as_pubsub();
-            pubsub.subscribe(game_id.to_string()).unwrap();
-            loop {
-                let msg = pubsub.get_message().unwrap();
+            let connection = pubsub_connect(args.server_hostname, args.server_port)
+                .await
+                .unwrap();
+
+            // let mut pubsub = connection.as_pubsub();
+            let mut stream = connection.subscribe(&game_id.to_string()).await.unwrap();
+
+            while let Some(Ok(msg)) = stream.next().await {
+                let msg = String::from_resp(msg).unwrap();
                 debug!("Received pubsub message: {:?}", msg);
-                let payload: String = msg.get_payload().unwrap();
-                let game_data: GameData = from_str(&payload).unwrap();
+                let game_data: GameData = from_str(&msg).unwrap();
                 debug!("Sending new game data to subscribers: {:?}", game_data);
                 tx.send(game_data).unwrap();
             }
+            // loop {
+            //     let msg = pubsub.get_message().unwrap();
+            //     debug!("Received pubsub message: {:?}", msg);
+            //     let payload: String = msg.get_payload().unwrap();
+            //     let game_data: GameData = from_str(&payload).unwrap();
+            //     debug!("Sending new game data to subscribers: {:?}", game_data);
+            //     tx.send(game_data).unwrap();
+
+            //     // debug:
+            //     // for _ in 0..5 {
+            //     //     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            //     //     let game_data = GameData::default();
+            //     //     tx.send(game_data).unwrap()
+            //     // }
+            // }
         });
 
         Ok(rx)
@@ -330,9 +351,9 @@ impl DataProvider for RedisProvider {
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
 
-    mod redis_stack {
+    pub mod redis_stack {
         use testcontainers::{core::WaitFor, Image};
         // docker image: redis-stack-server
 

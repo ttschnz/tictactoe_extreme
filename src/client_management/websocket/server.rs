@@ -90,19 +90,47 @@ impl<T: DataProvider + Default + 'static> Server<T> for WebSocketServer<T> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        websocket::stream_handler::{IncommingMessage, OutgoingMessage},
-        CacheProvider,
-    };
+    pub mod redis_stack {
+        use testcontainers::{core::WaitFor, Image};
+        // docker image: redis-stack-server
+
+        const NAME: &str = "redis/redis-stack-server";
+        const TAG: &str = "latest";
+
+        #[derive(Debug, Default)]
+        pub struct Redis;
+
+        impl Image for Redis {
+            type Args = ();
+
+            fn name(&self) -> String {
+                NAME.to_owned()
+            }
+
+            fn tag(&self) -> String {
+                TAG.to_owned()
+            }
+
+            fn ready_conditions(&self) -> Vec<WaitFor> {
+                vec![WaitFor::message_on_stdout("Ready to accept connections")]
+            }
+        }
+    }
 
     use super::*;
+    use crate::{
+        websocket::stream_handler::{IncommingMessage, OutgoingMessage},
+        CacheProvider, Move, Player, RedisProvider, RedisProviderArgs,
+    };
     use futures_util::{SinkExt, StreamExt};
+
+    use redis_stack::Redis;
     use std::time::Duration;
-    use uuid::Uuid;
-
-    use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
-
+    use testcontainers::clients::Cli as DockerCli;
     use tokio::time::sleep;
+    use tokio::time::timeout;
+    use tokio_tungstenite::{connect_async, tungstenite::Message};
+    use uuid::Uuid;
     // use tokio_tungstenite::tungstenite::client;
 
     #[tokio::test]
@@ -125,16 +153,46 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_server() {
+    async fn test_server_with_cache() {
+        // env_logger::init();
+        let data_provider = CacheProvider::default();
+        test_server(data_provider).await;
+    }
+
+    #[tokio::test]
+    async fn test_server_with_redis() {
+        // env_logger::init();
+        let docker_cli = DockerCli::default();
+        let image = Redis;
+
+        let redis_container = docker_cli.run(image);
+
+        // Get the port of the running Redis container
+        let server_port = redis_container.get_host_port_ipv4(6379);
+
+        let data_provider = RedisProvider::new(RedisProviderArgs {
+            server_port,
+            ..Default::default()
+        })
+        .unwrap();
+        test_server(data_provider).await;
+    }
+
+    async fn test_server<T: DataProvider + Default + 'static>(mut data_provider: T) {
         // env_logger::builder()
         //     .is_test(true)
         //     .try_init()
         //     .expect("Failed to init logger");
         let game_id = Uuid::new_v4();
 
-        let mut server = WebSocketServer::from_env(CacheProvider::default());
+        let random_port = rand::random::<u16>();
+        let mut server = WebSocketServer::new(
+            WebSocketServer::<T>::DEFAULT_HOST.to_string(),
+            random_port,
+            data_provider.clone(),
+        );
+        // let mut server = WebSocketServer::from_env(data_provider.clone());
         let server_address = server.get_address();
-        let mut data_provider = CacheProvider::default();
 
         data_provider.create_game(Some(game_id)).unwrap();
         tokio::spawn(async move {
@@ -143,23 +201,47 @@ mod test {
 
         // wait for server to start
         sleep(Duration::from_millis(100)).await;
-
+        debug!("connecting to server");
         // connect to server
-        match connect_async(format!("ws://{}/{}", server_address, game_id)).await {
+        match timeout(
+            Duration::from_millis(1000),
+            connect_async(format!("ws://{}/{}", server_address, game_id)),
+        )
+        .await
+        .unwrap()
+        {
             Err(e) => {
                 panic!("Error connecting to server: {:?}", e);
             }
             Ok((ws_stream, _)) => {
-                let (mut write, mut read) = ws_stream.split();
-                write
-                    .send(Message::Text(
-                        serde_json::to_string(&IncommingMessage::Ping {}).unwrap(),
-                    ))
+                let (_write, mut read) = ws_stream.split();
+                // write
+                //     .send(Message::Text(
+                //         serde_json::to_string(&IncommingMessage::Ping {}).unwrap(),
+                //     ))
+                //     .await
+                //     .unwrap();
+                debug!("reading messages");
+
+                let msg = timeout(Duration::from_millis(1000), read.next())
                     .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap();
+                let msg = serde_json::from_str::<OutgoingMessage>(&msg.to_string()).unwrap();
+                debug!("received first message via websocket: {:?}", msg);
+
+                data_provider
+                    .add_move(game_id, Move::new((0, 0), Player::X))
                     .unwrap();
 
                 let msg = read.next().await.unwrap().unwrap();
-                serde_json::from_str::<OutgoingMessage>(&msg.to_string()).unwrap();
+                debug!("received second message via websocket: {:?}", msg);
+                // TODO: currently in beta, but assert_matches would be really neat here.
+                assert!(matches!(
+                    serde_json::from_str::<OutgoingMessage>(&msg.to_string()),
+                    Ok(OutgoingMessage::GameState { game_state: _ })
+                ))
             }
         }
     }

@@ -71,7 +71,10 @@ mod test {
 
     #[tokio::test]
     async fn test_server() {
-        let mut server = StaticServer::<CacheProvider>::default();
+        let random_port = rand::random::<u16>();
+        let default_host = StaticServer::<CacheProvider>::DEFAULT_HOST.to_string();
+        let mut server =
+            StaticServer::<CacheProvider>::new(default_host, random_port, CacheProvider::default());
         // create a file in the static folder
         let contents = "this is a test. Please delete this file";
         let address = server.get_address();
