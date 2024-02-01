@@ -1,0 +1,37 @@
+services:
+  nginx_proxy:
+    image: nginx:alpine
+    ports:
+      - 80:80
+    volumes:
+      - ./nginx/monolyth:/etc/nginx
+      - ./docker_data/nginx:/var/log/nginx
+    depends_on:
+      - monolyth
+    links:
+      - monolyth
+  
+  monolyth:
+    build:
+      context: .
+      target: final
+      dockerfile: Dockerfile
+    stop_grace_period: 0s
+    environment:
+      - WEBSERVER_PORT=3000
+      - WEBSERVER_HOST=[::]
+
+      - REDIS_SERVER_HOSTNAME=redis
+      - REDIS_SERVER_PORT=6379
+
+      - API_PORT=4000
+      - API_HOST=[::]
+
+      - WEBSOCKET_PORT=5000
+      - WEBSOCKET_HOST=[::]
+
+      - RUST_LOG=debug
+    volumes:
+      - ./static:/static:ro
+    command: [ "/bin/server" ]
+  
